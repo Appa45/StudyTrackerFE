@@ -1,5 +1,7 @@
-import { notFound } from "next/navigation";
-import { cookies } from "next/headers";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 
 import TopicHeader from "../../../../components/topics/TopicHeader";
 import TopicStats from "../../../../components/topics/TopicStats";
@@ -11,10 +13,7 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   "http://localhost:5000/api";
 
-type Difficulty =
-  | "Beginner"
-  | "Intermediate"
-  | "Advanced";
+type Difficulty = "Beginner" | "Intermediate" | "Advanced";
 
 type TopicStatus =
   | "Not Started"
@@ -41,34 +40,13 @@ interface Lesson {
   title: string;
   description?: string;
   content?: string;
-
-  resourceType?:
-    | "none"
-    | "image"
-    | "pdf"
-    | "external";
-
+  resourceType?: "none" | "image" | "pdf" | "external";
   resourceUrl?: string;
-
   completed: boolean;
   completedAt?: string | null;
   order: number;
-
   createdAt?: string;
   updatedAt?: string;
-}
-
-interface TopicResponse {
-  success: boolean;
-  data?: ApiTopic;
-  topic?: ApiTopic;
-  message?: string;
-}
-
-interface LessonsResponse {
-  success: boolean;
-  data?: Lesson[];
-  message?: string;
 }
 
 interface TopicDetailsData {
@@ -86,307 +64,262 @@ interface TopicDetailsData {
   remainingLessons: number;
 }
 
-interface TopicDetailsPageProps {
-  params: Promise<{
-    id: string;
-  }>;
+interface TopicResponse {
+  success: boolean;
+  topic?: ApiTopic;
+  data?: ApiTopic;
+  message?: string;
 }
 
-export default async function TopicDetailsPage({
-  params,
-}: TopicDetailsPageProps) {
-  const { id } = await params;
+interface LessonsResponse {
+  success: boolean;
+  data?: Lesson[];
+  message?: string;
+}
 
-  if (!id) {
-    notFound();
-  }
+export default function TopicDetailsPage() {
+  const params = useParams();
+  const router = useRouter();
 
-  const cookieStore = await cookies();
-  const cookieHeader = cookieStore.toString();
+  const id = params?.id as string;
 
-  /*
-   * =====================================================
-   * FETCH TOPIC
-   * =====================================================
-   */
+  const [topic, setTopic] = useState<TopicDetailsData | null>(null);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  let topicResponse: Response;
+  useEffect(() => {
+    if (!id) return;
 
-  try {
-    topicResponse = await fetch(
-      `${API_URL}/topics/${encodeURIComponent(id)}`,
-      {
-        method: "GET",
-        headers: {
-          Cookie: cookieHeader,
-        },
-        cache: "no-store",
-      }
-    );
-  } catch (error) {
-    console.error(
-      "Topic API connection error:",
-      error
-    );
+    async function loadTopicDetails() {
+      try {
+        setLoading(true);
+        setError("");
 
-    throw new Error(
-      "Unable to connect to the backend server."
-    );
-  }
+        console.log("Topic Details API:", {
+          apiUrl: API_URL,
+          topicId: id,
+        });
 
-  const topicResult: TopicResponse =
-    await topicResponse
-      .json()
-      .catch(() => ({
-        success: false,
-      }));
-
-  if (topicResponse.status === 404) {
-    notFound();
-  }
-
-  if (topicResponse.status === 401) {
-    throw new Error(
-      "You are not authenticated. Please login again."
-    );
-  }
-
-  if (!topicResponse.ok) {
-    throw new Error(
-      topicResult.message ||
-        "Unable to load topic."
-    );
-  }
-
-  const apiTopic =
-    topicResult.data ??
-    topicResult.topic;
-
-  if (!apiTopic) {
-    notFound();
-  }
-
-  /*
-   * =====================================================
-   * FETCH LESSONS
-   * =====================================================
-   */
-
-  let lessons: Lesson[] = [];
-
-  try {
-    const lessonsResponse = await fetch(
-      `${API_URL}/topics/${encodeURIComponent(
-        id
-      )}/lessons`,
-      {
-        method: "GET",
-        headers: {
-          Cookie: cookieHeader,
-        },
-        cache: "no-store",
-      }
-    );
-
-    const lessonsResult: LessonsResponse =
-      await lessonsResponse
-        .json()
-        .catch(() => ({
-          success: false,
-        }));
-
-    if (lessonsResponse.ok) {
-      lessons =
-        lessonsResult.data ?? [];
-    } else {
-      console.error(
-        "Lessons API error:",
-        lessonsResponse.status,
-        lessonsResult.message
-      );
-    }
-  } catch (error) {
-    console.error(
-      "Lessons API connection error:",
-      error
-    );
-
-    lessons = [];
-  }
-
-  /*
-   * =====================================================
-   * CALCULATE LESSON STATS
-   * =====================================================
-   */
-
-  const totalLessons =
-    lessons.length;
-
-  const completedLessons =
-    lessons.filter(
-      (lesson) => lesson.completed
-    ).length;
-
-  const remainingLessons = Math.max(
-    totalLessons - completedLessons,
-    0
-  );
-
-  const progress =
-    totalLessons > 0
-      ? Math.round(
-          (completedLessons /
-            totalLessons) *
-            100
-        )
-      : 0;
-
-  /*
-   * IMPORTANT:
-   * Explicitly type this as TopicStatus.
-   *
-   * This fixes:
-   *
-   * Type 'string' is not assignable to
-   * type '"Not Started" | "In Progress" | "Completed"'
-   */
-
-  const status: TopicStatus =
-    progress === 100
-      ? "Completed"
-      : progress > 0
-      ? "In Progress"
-      : "Not Started";
-
-  /*
-   * =====================================================
-   * FORMAT TARGET DATE
-   * =====================================================
-   */
-
-  const targetDate =
-    apiTopic.targetDate
-      ? new Intl.DateTimeFormat(
-          "en-IN",
+        /*
+         * 1. Get topic
+         */
+        const topicResponse = await fetch(
+          `${API_URL}/topics/${encodeURIComponent(id)}`,
           {
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
           }
-        ).format(
-          new Date(apiTopic.targetDate)
-        )
-      : "Not specified";
+        );
 
-  /*
-   * =====================================================
-   * CREATE TYPED TOPIC OBJECT
-   * =====================================================
-   */
+        console.log(
+          "Topic details response:",
+          topicResponse.status
+        );
 
-  const topic: TopicDetailsData = {
-    id: apiTopic._id,
+        const topicResult: TopicResponse =
+          await topicResponse.json();
 
-    title: apiTopic.title,
+        console.log("Topic details result:", topicResult);
 
-    subject: apiTopic.subject,
+        if (topicResponse.status === 401) {
+          router.push("/login");
+          return;
+        }
 
-    difficulty:
-      apiTopic.difficulty,
+        if (!topicResponse.ok || !topicResult.success) {
+          throw new Error(
+            topicResult.message ||
+              "Unable to load topic details."
+          );
+        }
 
-    progress,
+        const apiTopic =
+          topicResult.topic ?? topicResult.data;
 
-    status,
+        if (!apiTopic) {
+          throw new Error("Topic data was not returned.");
+        }
 
-    targetDate,
+        /*
+         * 2. Get lessons
+         */
+        let fetchedLessons: Lesson[] = [];
 
-    description:
-      apiTopic.description ||
-      "No description available.",
+        try {
+          const lessonsResponse = await fetch(
+            `${API_URL}/topics/${encodeURIComponent(id)}/lessons`,
+            {
+              method: "GET",
+              credentials: "include",
+              cache: "no-store",
+            }
+          );
 
-    estimatedTime:
-      apiTopic.estimatedTime ||
-      "Not specified",
+          const lessonsResult: LessonsResponse =
+            await lessonsResponse.json();
 
-    completedLessons,
+          if (lessonsResponse.ok && lessonsResult.success) {
+            fetchedLessons = lessonsResult.data ?? [];
+          }
+        } catch (lessonError) {
+          console.error(
+            "Lessons API error:",
+            lessonError
+          );
+        }
 
-    totalLessons,
+        /*
+         * 3. Calculate lesson statistics
+         */
+        const totalLessons = fetchedLessons.length;
 
-    remainingLessons,
-  };
+        const completedLessons =
+          fetchedLessons.filter(
+            (lesson) => lesson.completed
+          ).length;
 
-  /*
-   * =====================================================
-   * PAGE
-   * =====================================================
-   */
+        const remainingLessons = Math.max(
+          totalLessons - completedLessons,
+          0
+        );
+
+        const progress =
+          totalLessons > 0
+            ? Math.round(
+                (completedLessons / totalLessons) * 100
+              )
+            : Number(apiTopic.progress ?? 0);
+
+        const status: TopicStatus =
+          progress >= 100
+            ? "Completed"
+            : progress > 0
+            ? "In Progress"
+            : "Not Started";
+
+        /*
+         * 4. Format target date
+         */
+        const targetDate = apiTopic.targetDate
+          ? new Intl.DateTimeFormat("en-IN", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            }).format(new Date(apiTopic.targetDate))
+          : "Not specified";
+
+        /*
+         * 5. Build frontend topic object
+         */
+        const topicData: TopicDetailsData = {
+          id: apiTopic._id,
+          title: apiTopic.title,
+          subject: apiTopic.subject,
+          difficulty: apiTopic.difficulty,
+          progress,
+          status,
+          targetDate,
+          description:
+            apiTopic.description ||
+            "No description available.",
+          estimatedTime:
+            apiTopic.estimatedTime ||
+            "Not specified",
+          completedLessons,
+          totalLessons,
+          remainingLessons,
+        };
+
+        setTopic(topicData);
+        setLessons(fetchedLessons);
+      } catch (error) {
+        console.error(
+          "Topic Details API error:",
+          error
+        );
+
+        setError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load topic details."
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadTopicDetails();
+  }, [id, router]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="text-sm text-slate-500">
+          Loading topic details...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-2xl border border-red-100 bg-red-50 p-6">
+        <h2 className="text-lg font-semibold text-red-700">
+          Unable to load topic
+        </h2>
+
+        <p className="mt-2 text-sm text-red-600">
+          {error}
+        </p>
+
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (!topic) {
+    return null;
+  }
 
   return (
     <div className="space-y-6">
-      {/* =================================================
-          TOPIC HEADER
-      ================================================= */}
-
-      <TopicHeader
-        topic={topic}
-      />
-
-      {/* =================================================
-          TOPIC STATS
-      ================================================= */}
+      <TopicHeader topic={topic} />
 
       <TopicStats
         progress={topic.progress}
-        completedLessons={
-          topic.completedLessons
-        }
-        totalLessons={
-          topic.totalLessons
-        }
-        targetDate={
-          topic.targetDate
-        }
+        completedLessons={topic.completedLessons}
+        totalLessons={topic.totalLessons}
+        targetDate={topic.targetDate}
       />
-
-      {/* =================================================
-          PROGRESS + INFORMATION
-      ================================================= */}
 
       <section className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <TopicProgress
           progress={topic.progress}
-          completedLessons={
-            topic.completedLessons
-          }
-          totalLessons={
-            topic.totalLessons
-          }
+          completedLessons={topic.completedLessons}
+          totalLessons={topic.totalLessons}
         />
 
         <TopicInformation
           subject={topic.subject}
           difficulty={topic.difficulty}
           targetDate={topic.targetDate}
-          estimatedTime={
-            topic.estimatedTime
-          }
+          estimatedTime={topic.estimatedTime}
           status={topic.status}
         />
       </section>
-
-      {/* =================================================
-          LESSONS
-      ================================================= */}
 
       <TopicLessons
         topicId={topic.id}
         initialLessons={lessons}
       />
-
-      {/* =================================================
-          AI TUTOR
-      ================================================= */}
 
       <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
         <div>
@@ -399,9 +332,8 @@ export default async function TopicDetailsPage({
           </h2>
 
           <p className="mt-1 text-sm text-slate-500">
-            Ask the AI tutor questions about
-            this topic and get personalized
-            explanations.
+            Ask the AI tutor questions about this topic
+            and get personalized explanations.
           </p>
         </div>
       </section>
