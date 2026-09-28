@@ -86,6 +86,8 @@ export default async function SettingsPage() {
       }
     );
 
+    console.log("response",response)
+
     const result: ProfileResponse =
       await response.json().catch(() => ({
         success: false,
