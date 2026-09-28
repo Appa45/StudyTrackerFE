@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import AuthShell from "../../components/auth/AuthShell";
@@ -57,9 +58,7 @@ export default function LoginPage() {
     return nextErrors;
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>
-  ) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const validationErrors = validateForm();
@@ -173,16 +172,13 @@ export default function LoginPage() {
               Password
             </label>
 
-            <button
-              type="button"
-              className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
-              onClick={() => {
-                // Password reset can be integrated later.
-                console.log("Forgot password clicked");
-              }}
+            {/* Forgot Password */}
+            <Link
+              href="/forgot-password"
+              className="text-xs font-medium text-indigo-600 transition hover:text-indigo-700"
             >
               Forgot password?
-            </button>
+            </Link>
           </div>
 
           <div className="relative">
