@@ -11,10 +11,10 @@ export default function OverallProgress({
   pending,
   total,
 }: OverallProgressProps) {
-  const percentage =
-    total > 0
-      ? Math.round((completed / total) * 100)
-      : 0;
+ const percentage =
+  total > 0
+    ? Math.round((completed / total) * 100)
+    : 0;
 
   const completedAngle = percentage * 3.6;
 

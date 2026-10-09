@@ -3,6 +3,10 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  GoogleLogin,
+  type CredentialResponse,
+} from "@react-oauth/google";
 
 import AuthShell from "../../components/auth/AuthShell";
 import FormInput from "../../components/ui/FormInput";
@@ -24,8 +28,10 @@ interface LoginResponse {
   };
 }
 
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:5000/api"
+).replace(/\/$/, "");
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,6 +45,7 @@ export default function LoginPage() {
   const [errors, setErrors] = useState<LoginErrors>({});
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   function validateForm() {
     const nextErrors: LoginErrors = {};
@@ -58,7 +65,10 @@ export default function LoginPage() {
     return nextErrors;
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  // Email and password login
+  async function handleSubmit(
+    event: FormEvent<HTMLFormElement>
+  ) {
     event.preventDefault();
 
     const validationErrors = validateForm();
@@ -81,6 +91,7 @@ export default function LoginPage() {
         body: JSON.stringify({
           email: form.email.trim().toLowerCase(),
           password: form.password,
+          rememberMe: form.rememberMe,
         }),
       });
 
@@ -88,20 +99,18 @@ export default function LoginPage() {
         .json()
         .catch(() => ({}));
 
-      if (!response.ok) {
+      if (!response.ok || data.success === false) {
         setErrors({
           general:
             data.message ||
             data.error ||
             "Invalid email or password.",
         });
-
         return;
       }
 
-      // Login successful.
       // Backend sets the JWT in an httpOnly cookie.
-      router.push("/dashboard");
+      router.replace("/dashboard");
       router.refresh();
     } catch (error) {
       console.error("Login error:", error);
@@ -113,6 +122,71 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  // Google login
+  async function handleGoogleSuccess(
+    googleResponse: CredentialResponse
+  ) {
+    const credential = googleResponse.credential;
+
+    if (!credential) {
+      setErrors({
+        general: "Google did not return a login credential.",
+      });
+      return;
+    }
+
+    setIsGoogleLoading(true);
+    setErrors({});
+
+    try {
+      const response = await fetch(`${API_URL}/auth/google`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          credential,
+        }),
+      });
+
+      const data: LoginResponse = await response
+        .json()
+        .catch(() => ({}));
+
+      if (!response.ok || data.success === false) {
+        setErrors({
+          general:
+            data.message ||
+            data.error ||
+            "Google login failed. Please try again.",
+        });
+        return;
+      }
+
+      // The backend must verify the Google credential
+      // and set the StudyTrack authentication cookie.
+      router.replace("/dashboard");
+      router.refresh();
+    } catch (error) {
+      console.error("Google login error:", error);
+
+      setErrors({
+        general:
+          "Unable to connect to the server. Please try again.",
+      });
+    } finally {
+      setIsGoogleLoading(false);
+    }
+  }
+
+  function handleGoogleError() {
+    setErrors({
+      general:
+        "Google sign-in failed or was cancelled. Please try again.",
+    });
   }
 
   return (
@@ -172,7 +246,6 @@ export default function LoginPage() {
               Password
             </label>
 
-            {/* Forgot Password */}
             <Link
               href="/forgot-password"
               className="text-xs font-medium text-indigo-600 transition hover:text-indigo-700"
@@ -215,9 +288,7 @@ export default function LoginPage() {
               }
               className="absolute right-3 top-1/2 -translate-y-1/2 rounded-lg px-2 py-1 text-xs font-medium text-slate-400 hover:bg-slate-50 hover:text-slate-600"
               aria-label={
-                showPassword
-                  ? "Hide password"
-                  : "Show password"
+                showPassword ? "Hide password" : "Show password"
               }
             >
               {showPassword ? "Hide" : "Show"}
@@ -231,7 +302,7 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* Remember */}
+        {/* Remember me */}
         <label className="flex cursor-pointer items-center gap-3">
           <input
             type="checkbox"
@@ -250,10 +321,10 @@ export default function LoginPage() {
           </span>
         </label>
 
-        {/* Submit */}
+        {/* Email login */}
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || isGoogleLoading}
           className="w-full rounded-2xl bg-indigo-600 px-5 py-3.5 text-sm font-semibold text-white shadow-lg shadow-indigo-100 transition hover:-translate-y-0.5 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isLoading ? "Logging in..." : "Login"}
@@ -263,21 +334,32 @@ export default function LoginPage() {
         <div className="flex items-center gap-4 py-2">
           <div className="h-px flex-1 bg-slate-200" />
 
-          <span className="text-xs text-slate-400">
-            or
-          </span>
+          <span className="text-xs text-slate-400">or</span>
 
           <div className="h-px flex-1 bg-slate-200" />
         </div>
 
-        {/* Google */}
-        <button
-          type="button"
-          className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-3.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-        >
-          <span className="font-bold">G</span>
-          Continue with Google
-        </button>
+        {/* Google login */}
+        <div className="flex min-h-10 flex-col items-center justify-center gap-2">
+          {isGoogleLoading ? (
+            <p
+              className="text-sm text-slate-500"
+              role="status"
+            >
+              Signing in with Google...
+            </p>
+          ) : (
+            <GoogleLogin
+              onSuccess={handleGoogleSuccess}
+              onError={handleGoogleError}
+              theme="outline"
+              size="large"
+              text="continue_with"
+              shape="rectangular"
+              width="320"
+            />
+          )}
+        </div>
       </form>
     </AuthShell>
   );

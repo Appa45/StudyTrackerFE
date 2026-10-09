@@ -14,6 +14,19 @@ interface Message {
   time?: string;
 }
 
+interface ExplainResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    explanation?: string;
+  };
+}
+
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:5000/api"
+).replace(/\/$/, "");
+
 const initialMessages: Message[] = [
   {
     id: 1,
@@ -31,12 +44,8 @@ export default function AITutorPage() {
   const [question, setQuestion] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  async function askQuestion(
-    selectedQuestion?: string
-  ) {
-    const text = (
-      selectedQuestion ?? question
-    ).trim();
+  async function askQuestion(selectedQuestion?: string) {
+    const text = (selectedQuestion ?? question).trim();
 
     if (!text || isLoading) {
       return;
@@ -49,40 +58,41 @@ export default function AITutorPage() {
       time: "Now",
     };
 
-    setMessages((previous) => [
-      ...previous,
-      userMessage,
-    ]);
-
+    setMessages((previous) => [...previous, userMessage]);
     setQuestion("");
     setIsLoading(true);
 
     try {
-      const response = await fetch(
-        "/api/ai/explain",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            question: text,
-          }),
-        }
-      );
+      const response = await fetch(`${API_URL}/ai/explain`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          topic: text,
+        }),
+      });
 
-      const data = await response.json();
+      const data: ExplainResponse | null =
+        await response.json().catch(() => null);
 
-      if (!response.ok) {
+      if (!response.ok || !data?.success) {
         throw new Error(
-          data.error || "Unable to get response"
+          data?.message || "Unable to get an AI response."
         );
+      }
+
+      const explanation = data.data?.explanation;
+
+      if (!explanation) {
+        throw new Error("The AI did not return an explanation.");
       }
 
       const assistantMessage: Message = {
         id: Date.now() + 1,
         role: "assistant",
-        content: data.answer,
+        content: explanation,
         time: "Now",
       };
 
@@ -90,12 +100,16 @@ export default function AITutorPage() {
         ...previous,
         assistantMessage,
       ]);
-    } catch {
+    } catch (error) {
+      console.error("AI Tutor request failed:", error);
+
       const errorMessage: Message = {
         id: Date.now() + 1,
         role: "assistant",
         content:
-          "Sorry, I couldn't process that question right now. Please try again.",
+          error instanceof Error
+            ? error.message
+            : "Sorry, I couldn't process that question. Please try again.",
         time: "Now",
       };
 
@@ -108,10 +122,7 @@ export default function AITutorPage() {
     }
   }
 
-  function handleSuggestedQuestion(
-    selectedQuestion: string
-  ) {
-    setQuestion(selectedQuestion);
+  function handleSuggestedQuestion(selectedQuestion: string) {
     askQuestion(selectedQuestion);
   }
 
@@ -122,20 +133,15 @@ export default function AITutorPage() {
 
   return (
     <div className="space-y-6">
-
       <AITutorHeader />
 
       {/* Main Tutor */}
       <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_300px]">
-
         {/* Chat */}
         <div className="flex min-h-[600px] flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-100">
-
           {/* Chat header */}
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-
             <div className="flex items-center gap-3">
-
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
                 ✦
               </div>
@@ -149,23 +155,21 @@ export default function AITutorPage() {
                   <span className="h-2 w-2 rounded-full bg-emerald-500" />
 
                   <span className="text-[10px] text-slate-400">
-                    Ready to help
+                    {isLoading ? "Thinking..." : "Ready to help"}
                   </span>
                 </div>
               </div>
-
             </div>
 
             <button
               type="button"
               onClick={clearChat}
-              className="text-xs font-medium text-slate-400 transition hover:text-red-500"
+              disabled={isLoading}
+              className="text-xs font-medium text-slate-400 transition hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Clear chat
             </button>
-
           </div>
-
 
           {/* Messages */}
           <div className="flex-1 space-y-5 overflow-y-auto p-5 sm:p-6">
@@ -179,7 +183,11 @@ export default function AITutorPage() {
             ))}
 
             {isLoading && (
-              <div className="flex items-center gap-3">
+              <div
+                className="flex items-center gap-3"
+                role="status"
+                aria-label="AI is generating a response"
+              >
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
                   ✦
                 </div>
@@ -195,16 +203,12 @@ export default function AITutorPage() {
             )}
           </div>
 
-
           {/* Suggested questions + Input */}
           <div className="border-t border-slate-100 p-4 sm:p-5">
-
             {messages.length === 1 && (
               <div className="mb-5">
                 <SuggestedQuestions
-                  onSelect={
-                    handleSuggestedQuestion
-                  }
+                  onSelect={handleSuggestedQuestion}
                 />
               </div>
             )}
@@ -215,15 +219,11 @@ export default function AITutorPage() {
               onChange={setQuestion}
               onSubmit={() => askQuestion()}
             />
-
           </div>
-
         </div>
-
 
         {/* Right information panel */}
         <aside className="space-y-4">
-
           {/* AI capability */}
           <div className="rounded-2xl bg-indigo-600 p-5 text-white">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15">
@@ -235,22 +235,18 @@ export default function AITutorPage() {
             </h2>
 
             <p className="mt-2 text-xs leading-5 text-indigo-100">
-              Ask for simple explanations, examples,
-              comparisons, or help understanding a difficult
-              topic.
+              Ask for simple explanations, examples, comparisons,
+              or help understanding a difficult topic.
             </p>
           </div>
 
-
           {/* Good questions */}
           <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
-
             <h2 className="text-sm font-bold text-slate-900">
               You can ask
             </h2>
 
             <div className="mt-4 space-y-3">
-
               <div className="rounded-xl bg-slate-50 p-3">
                 <p className="text-xs font-medium text-slate-700">
                   Explain simply
@@ -280,11 +276,8 @@ export default function AITutorPage() {
                   "Promise vs async/await?"
                 </p>
               </div>
-
             </div>
-
           </div>
-
 
           {/* Disclaimer */}
           <div className="rounded-2xl bg-amber-50 p-4">
@@ -294,11 +287,8 @@ export default function AITutorPage() {
               information.
             </p>
           </div>
-
         </aside>
-
       </section>
-
     </div>
   );
 }

@@ -29,11 +29,17 @@ export default function ProgressOverview({
     },
   ];
 
-  const percentage = Math.min(
-    100,
-    Math.max(0, Math.round(progress))
-  );
+  const total = completed + inProgress + notStarted;
 
+  const percentage =
+    total > 0
+      ? Math.round((completed / total) * 100)
+      : 0;
+
+  console.log("percentage",percentage, progress,
+  completed,
+  inProgress,
+  notStarted,)
   return (
     <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 sm:p-6">
 
