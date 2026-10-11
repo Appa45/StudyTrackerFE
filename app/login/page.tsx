@@ -340,7 +340,7 @@ export default function LoginPage() {
         </div>
 
         {/* Google login */}
-        <div className="flex min-h-10 flex-col items-center justify-center gap-2">
+        {/* <div className="flex min-h-10 flex-col items-center justify-center gap-2">
           {isGoogleLoading ? (
             <p
               className="text-sm text-slate-500"
@@ -359,7 +359,7 @@ export default function LoginPage() {
               width="320"
             />
           )}
-        </div>
+        </div> */}
       </form>
     </AuthShell>
   );
