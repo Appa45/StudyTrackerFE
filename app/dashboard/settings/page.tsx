@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { cookies } from "next/headers";
 
@@ -6,41 +7,29 @@ import ProfileSettings from "../../../components/settings/ProfileSettings";
 import PreferenceSettings from "../../../components/settings/PreferenceSettings";
 import NotificationSettings from "../../../components/settings/NotificationSettings";
 
-const API_URL =
+const API_URL = (
+  process.env.API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:5000/api";
+  "http://localhost:5000/api"
+).replace(/\/+$/, "");
 
 interface UserProfile {
   _id: string;
   name: string;
   email: string;
-
   phone?: string;
   bio?: string;
-
-  preferredStudyTime?:
-    | "Morning"
-    | "Afternoon"
-    | "Evening"
-    | "Night";
-
+  preferredStudyTime?: string;
   preferences?: {
     dailyGoal?: number;
-
-    preferredDifficulty?:
-      | "Beginner"
-      | "Intermediate"
-      | "Advanced";
+    preferredDifficulty?: string;
   };
-
   notifications?: {
     emailUpdates?: boolean;
     studyReminders?: boolean;
     weeklySummary?: boolean;
   };
-
-  role?: "student" | "admin";
-
+  role?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -49,247 +38,227 @@ interface ProfileResponse {
   success: boolean;
   data?: UserProfile;
   message?: string;
+  error?: string;
+}
+
+async function getUserProfile(): Promise<{
+  profile: UserProfile | null;
+  error: string;
+}> {
+  try {
+    const cookieStore = await cookies();
+    const cookieHeader = cookieStore.toString();
+
+    const response = await fetch(`${API_URL}/users/profile`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+      },
+      cache: "no-store",
+    });
+
+    const result: ProfileResponse = await response.json();
+
+    if (!response.ok) {
+      console.error("Profile API failed:", response.status, result);
+
+      return {
+        profile: null,
+        error:
+          result.message ||
+          result.error ||
+          `Unable to load profile (HTTP ${response.status}).`,
+      };
+    }
+
+    if (!result.success || !result.data) {
+      console.error("Invalid profile API response:", result);
+
+      return {
+        profile: null,
+        error: result.message || "Profile data was not returned by the API.",
+      };
+    }
+
+    return {
+      profile: result.data,
+      error: "",
+    };
+  } catch (error) {
+    console.error("Error fetching user profile:", error);
+
+    return {
+      profile: null,
+      error:
+        "Unable to connect to the profile service. Please try again later.",
+    };
+  }
 }
 
 export default async function SettingsPage() {
-  const cookieStore = await cookies();
-
-  /*
-   * --------------------------------------------------
-   * Fetch logged-in user profile
-   * --------------------------------------------------
-   *
-   * The request is made from the Next.js server.
-   *
-   * This avoids making another API request from the
-   * browser after the settings page loads.
-   */
-
-  let profile: UserProfile | null = null;
-  let profileError = "";
-
-  try {
-    const response = await fetch(
-      `${API_URL}/users/profile`,
-      {
-        method: "GET",
-
-        headers: {
-          Cookie: cookieStore.toString(),
-        },
-
-        /*
-         * Profile data is user-specific.
-         * Don't cache another user's profile.
-         */
-        cache: "no-store",
-      }
-    );
-
-    console.log("response",response)
-
-    const result: ProfileResponse =
-      await response.json().catch(() => ({
-        success: false,
-      }));
-
-    if (response.ok && result.success) {
-      profile = result.data ?? null;
-    } else {
-      profileError =
-        result.message ||
-        "Unable to load profile.";
-    }
-  } catch (error) {
-    console.error(
-      "Settings profile API error:",
-      error
-    );
-
-    profileError =
-      "Unable to connect to the profile service.";
-  }
+  const { profile, error } = await getUserProfile();
 
   return (
-    <div className="space-y-6">
-
-      {/* =========================================
-          HEADER
-      ========================================== */}
-
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-
-        <div>
-          <p className="text-sm font-medium text-slate-400">
-            Account
-          </p>
-
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            Settings
-          </h1>
-
-          <p className="mt-1 max-w-xl text-sm text-slate-500">
-            Manage your profile, learning preferences,
-            and notification settings.
-          </p>
-        </div>
-
-        <Link
-          href="/dashboard"
-          className="w-fit rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
-        >
-          ← Dashboard
-        </Link>
-
-      </section>
-
-      {/* =========================================
-          API ERROR
-      ========================================== */}
-
-      {profileError && (
-        <div
-          role="alert"
-          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-        >
-          {profileError}
-        </div>
-      )}
-
-      {/* =========================================
-          PROFILE
-      ========================================== */}
-
-      <SettingsSection
-        title="Profile"
-        description="Update the information associated with your account."
-      >
-        <ProfileSettings
-          initialProfile={profile}
-        />
-      </SettingsSection>
-
-      {/* =========================================
-          LEARNING PREFERENCES
-      ========================================== */}
-
-      <SettingsSection
-        title="Learning preferences"
-        description="Customize how StudyTrack helps you learn."
-      >
-        <PreferenceSettings
-          initialProfile={profile}
-        />
-      </SettingsSection>
-
-      {/* =========================================
-          NOTIFICATIONS
-      ========================================== */}
-
-      <SettingsSection
-        title="Notifications"
-        description="Choose which notifications you would like to receive."
-      >
-        <NotificationSettings
-          initialProfile={profile}
-        />
-      </SettingsSection>
-
-      {/* =========================================
-          ACCOUNT INFORMATION
-      ========================================== */}
-
-      {profile && (
-        <SettingsSection
-          title="Account information"
-          description="Information associated with your StudyTrack account."
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-
-            {/* Email */}
-
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-400">
-                Email
-              </p>
-
-              <p className="mt-1 break-all text-sm font-semibold text-slate-800">
-                {profile.email}
-              </p>
-            </div>
-
-            {/* Role */}
-
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-400">
-                Account type
-              </p>
-
-              <p className="mt-1 text-sm font-semibold capitalize text-slate-800">
-                {profile.role || "student"}
-              </p>
-            </div>
-
-            {/* Phone */}
-
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-400">
-                Phone
-              </p>
-
-              <p className="mt-1 text-sm font-semibold text-slate-800">
-                {profile.phone || "Not provided"}
-              </p>
-            </div>
-
-            {/* Preferred study time */}
-
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs font-medium text-slate-400">
-                Preferred study time
-              </p>
-
-              <p className="mt-1 text-sm font-semibold text-slate-800">
-                {profile.preferredStudyTime ||
-                  "Not selected"}
-              </p>
-            </div>
-
-          </div>
-        </SettingsSection>
-      )}
-
-      {/* =========================================
-          DANGER ZONE
-      ========================================== */}
-
-      <section className="rounded-2xl bg-red-50 p-5 ring-1 ring-red-100 sm:p-6">
-
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
+    <main className="min-h-screen bg-gray-50 px-4 py-8 text-gray-900 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
+        {/* Page header */}
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-sm font-bold text-red-800">
-              Delete account
-            </h2>
+            <div className="mb-2 text-sm text-gray-500">
+              <Link href="/dashboard" className="hover:text-gray-900">
+                Dashboard
+              </Link>
+              <span className="mx-2">/</span>
+              <span>Settings</span>
+            </div>
 
-            <p className="mt-1 max-w-xl text-xs leading-5 text-red-600">
-              Permanently delete your StudyTrack account
-              and associated learning data. This action
-              cannot be undone.
+            <h1 className="text-3xl font-bold tracking-tight">
+              Settings
+            </h1>
+
+            <p className="mt-2 text-sm text-gray-600">
+              Manage your profile, study preferences, and notifications.
             </p>
           </div>
 
-          <button
-            type="button"
-            className="w-fit rounded-xl bg-white px-4 py-2.5 text-xs font-semibold text-red-600 shadow-sm ring-1 ring-red-200 transition hover:bg-red-100"
+          <Link
+            href="/dashboard"
+            className="inline-flex w-fit items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium transition hover:bg-gray-100"
           >
-            Delete account
-          </button>
-
+            Back to Dashboard
+          </Link>
         </div>
 
-      </section>
+        {/* API error */}
+        {error && (
+          <div
+            role="alert"
+            className="mb-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          >
+            <p className="font-semibold">Unable to load settings</p>
+            <p className="mt-1">{error}</p>
+          </div>
+        )}
 
-    </div>
+        {/* Profile settings */}
+        <div className="space-y-6">
+          <SettingsSection
+            title="Profile"
+            description="Update your personal information."
+          >
+            <ProfileSettings initialProfile={profile} />
+          </SettingsSection>
+
+          {/* Study preferences */}
+          <SettingsSection
+            title="Study Preferences"
+            description="Customize your daily study goals and learning preferences."
+          >
+            <PreferenceSettings initialProfile={profile} />
+          </SettingsSection>
+
+          {/* Notifications */}
+          <SettingsSection
+            title="Notifications"
+            description="Choose which updates and reminders you receive."
+          >
+            <NotificationSettings initialProfile={profile} />
+          </SettingsSection>
+
+          {/* Account information */}
+          {profile && (
+            <SettingsSection
+              title="Account Information"
+              description="Details associated with your account."
+            >
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div>
+                  <p className="text-sm text-gray-500">Email address</p>
+                  <p className="mt-1 break-all font-medium">
+                    {profile.email || "Not provided"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Account role</p>
+                  <p className="mt-1 font-medium capitalize">
+                    {profile.role || "Student"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Daily study goal</p>
+                  <p className="mt-1 font-medium">
+                    {profile.preferences?.dailyGoal ?? 60} minutes
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">
+                    Preferred difficulty
+                  </p>
+                  <p className="mt-1 font-medium">
+                    {profile.preferences?.preferredDifficulty || "Beginner"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">
+                    Preferred study time
+                  </p>
+                  <p className="mt-1 font-medium">
+                    {profile.preferredStudyTime || "Morning"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Member since</p>
+                  <p className="mt-1 font-medium">
+                    {profile.createdAt
+                      ? new Date(profile.createdAt).toLocaleDateString(
+                          "en-IN",
+                          {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          }
+                        )
+                      : "Not available"}
+                  </p>
+                </div>
+              </div>
+            </SettingsSection>
+          )}
+
+          {/* Danger zone */}
+          <SettingsSection
+            title="Danger Zone"
+            description="Manage actions that affect your account."
+          >
+            <div className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="font-semibold text-red-800">
+                  Delete account
+                </h3>
+                <p className="mt-1 text-sm text-red-700">
+                  Account deletion is permanent. Contact support before
+                  proceeding.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled
+                title="Account deletion is not connected yet"
+                className="w-fit cursor-not-allowed rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-400"
+              >
+                Delete Account
+              </button>
+            </div>
+          </SettingsSection>
+        </div>
+      </div>
+    </main>
   );
 }
