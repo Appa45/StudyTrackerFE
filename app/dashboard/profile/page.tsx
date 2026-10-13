@@ -41,6 +41,7 @@ async function getUserProfile(): Promise<{
     const cookieStore = await cookies();
     const cookieHeader = cookieStore.toString();
 
+       console.log("cookies seen by server:", cookieStore.getAll().map((c) => c.name));
     const response = await fetch(`${API_URL}/users/profile`, {
       method: "GET",
       headers: {
