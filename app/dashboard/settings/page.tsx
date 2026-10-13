@@ -99,6 +99,7 @@ async function getUserProfile(): Promise<{
 export default async function SettingsPage() {
   const { profile, error } = await getUserProfile();
 
+  console.log("profile",profile)
   return (
     <main className="min-h-screen bg-gray-50 px-4 py-8 text-gray-900 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-5xl">
@@ -143,28 +144,28 @@ export default async function SettingsPage() {
 
         {/* Profile settings */}
         <div className="space-y-6">
-          <SettingsSection
+          {/* <SettingsSection
             title="Profile"
             description="Update your personal information."
           >
             <ProfileSettings initialProfile={profile} />
-          </SettingsSection>
+          </SettingsSection> */}
 
           {/* Study preferences */}
-          <SettingsSection
+          {/* <SettingsSection
             title="Study Preferences"
             description="Customize your daily study goals and learning preferences."
           >
             <PreferenceSettings initialProfile={profile} />
-          </SettingsSection>
+          </SettingsSection> */}
 
           {/* Notifications */}
-          <SettingsSection
+          {/* <SettingsSection
             title="Notifications"
             description="Choose which updates and reminders you receive."
           >
             <NotificationSettings initialProfile={profile} />
-          </SettingsSection>
+          </SettingsSection> */}
 
           {/* Account information */}
           {profile && (

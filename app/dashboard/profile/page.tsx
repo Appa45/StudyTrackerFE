@@ -1,9 +1,12 @@
+
 import Link from "next/link";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-const API_URL =
+const API_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:5000/api";
+  "http://localhost:5000/api"
+).replace(/\/+$/, "");
 
 interface User {
   _id: string;
@@ -12,9 +15,14 @@ interface User {
   phone?: string;
   bio?: string;
   avatar?: string;
+  role?: string;
   preferredDifficulty?: "Beginner" | "Intermediate" | "Advanced";
   dailyStudyGoal?: number;
   preferredStudyTime?: string;
+  preferences?: {
+    dailyGoal?: number;
+    preferredDifficulty?: "Beginner" | "Intermediate" | "Advanced";
+  };
   createdAt?: string;
 }
 
@@ -23,65 +31,151 @@ interface ProfileResponse {
   data?: User;
   user?: User;
   message?: string;
+  error?: string;
 }
 
-export default async function ProfilePage() {
-  const cookieStore = await cookies();
-
-  let response: Response;
-
+async function getUserProfile(): Promise<{
+  user: User | null;
+  error: string;
+}> {
   try {
-    response = await fetch(`${API_URL}/users/profile`, {
+    const cookieStore = await cookies();
+    const cookieHeader = cookieStore.toString();
+
+    const response = await fetch(`${API_URL}/users/profile`, {
       method: "GET",
       headers: {
-        Cookie: cookieStore.toString(),
+        Accept: "application/json",
+        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
       },
       cache: "no-store",
     });
+
+    const result: ProfileResponse = await response
+      .json()
+      .catch(() => ({ success: false }));
+
+    if (response.status === 401 || response.status === 403) {
+      redirect("/login?next=%2Fdashboard%2Fprofile");
+    }
+
+    if (!response.ok) {
+      console.error("Profile API error:", response.status, result);
+
+      return {
+        user: null,
+        error:
+          result.message ||
+          result.error ||
+          `Unable to load profile (HTTP ${response.status}).`,
+      };
+    }
+
+    const user = result.data ?? result.user;
+
+    if (!result.success || !user) {
+      console.error("Invalid profile API response:", result);
+
+      return {
+        user: null,
+        error: result.message || "Profile information was not found.",
+      };
+    }
+
+    return { user, error: "" };
   } catch (error) {
-    console.error("Profile API request failed:", error);
+    // Next.js redirect() throws internally; allow the redirect to proceed.
+    if (
+      error &&
+      typeof error === "object" &&
+      "digest" in error &&
+      typeof error.digest === "string" &&
+      error.digest.startsWith("NEXT_REDIRECT")
+    ) {
+      throw error;
+    }
 
-    throw new Error("Unable to connect to the profile service.");
+    console.error("Unable to fetch profile:", error);
+
+    return {
+      user: null,
+      error: "Unable to connect to the profile service. Please try again.",
+    };
   }
+}
 
-  const result: ProfileResponse = await response
-    .json()
-    .catch(() => ({
-      success: false,
-    }));
+export default async function ProfilePage() {
+  const { user, error } = await getUserProfile();
 
-  if (response.status === 401) {
-    throw new Error("You are not authenticated. Please login again.");
-  }
+  if (!user) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 py-8">
+        <h1 className="text-2xl font-bold text-slate-900">
+          My Profile
+        </h1>
 
-  if (!response.ok) {
-    throw new Error(
-      result.message || "Unable to load profile."
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-5 text-sm text-red-700"
+        >
+          <p className="font-semibold">Unable to load your profile</p>
+          <p className="mt-2">{error}</p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/dashboard"
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Back to Dashboard
+          </Link>
+
+          <Link
+            href="/login?next=%2Fdashboard%2Fprofile"
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+          >
+            Login Again
+          </Link>
+        </div>
+      </div>
     );
   }
 
-  const user = result.data ?? result.user;
-
-  if (!user) {
-    throw new Error("Profile information not found.");
-  }
-
-  const initials = user.name
-    ? user.name
-        .split(" ")
-        .map((name) => name[0])
-        .slice(0, 2)
-        .join("")
-        .toUpperCase()
-    : "U";
+  const initials =
+    user.name
+      ?.trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((part) => part[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "U";
 
   const joinedDate = user.createdAt
-    ? new Intl.DateTimeFormat("en-IN", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(new Date(user.createdAt))
+    ? (() => {
+        const date = new Date(user.createdAt);
+
+        return Number.isNaN(date.getTime())
+          ? "Not available"
+          : new Intl.DateTimeFormat("en-IN", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            }).format(date);
+      })()
     : "Not available";
+
+  // Support both older flat fields and the nested API response.
+  const preferredDifficulty =
+    user.preferences?.preferredDifficulty ??
+    user.preferredDifficulty ??
+    "Not specified";
+
+  const dailyStudyGoal =
+    user.preferences?.dailyGoal ?? user.dailyStudyGoal;
+
+  const preferredStudyTime =
+    user.preferredStudyTime || "Not specified";
 
   return (
     <div className="space-y-6">
@@ -119,7 +213,7 @@ export default async function ProfilePage() {
               {user.avatar ? (
                 <img
                   src={user.avatar}
-                  alt={user.name}
+                  alt={`${user.name}'s profile`}
                   className="h-24 w-24 rounded-2xl border-4 border-white object-cover shadow-md"
                 />
               ) : (
@@ -155,25 +249,16 @@ export default async function ProfilePage() {
         </div>
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <ProfileField
-            label="Full Name"
-            value={user.name}
-          />
+          <ProfileField label="Full Name" value={user.name} />
 
-          <ProfileField
-            label="Email Address"
-            value={user.email}
-          />
+          <ProfileField label="Email Address" value={user.email} />
 
           <ProfileField
             label="Phone Number"
             value={user.phone || "Not provided"}
           />
 
-          <ProfileField
-            label="Member Since"
-            value={joinedDate}
-          />
+          <ProfileField label="Member Since" value={joinedDate} />
 
           <div className="md:col-span-2">
             <ProfileField
@@ -199,21 +284,21 @@ export default async function ProfilePage() {
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
           <ProfileField
             label="Preferred Difficulty"
-            value={user.preferredDifficulty || "Not specified"}
+            value={preferredDifficulty}
           />
 
           <ProfileField
             label="Daily Study Goal"
             value={
-              user.dailyStudyGoal
-                ? `${user.dailyStudyGoal} minutes`
+              dailyStudyGoal != null
+                ? `${dailyStudyGoal} minutes`
                 : "Not specified"
             }
           />
 
           <ProfileField
             label="Preferred Study Time"
-            value={user.preferredStudyTime || "Not specified"}
+            value={preferredStudyTime}
           />
         </div>
       </section>
@@ -258,7 +343,7 @@ function ProfileField({
       </p>
 
       <div className="mt-2 rounded-xl bg-slate-50 px-4 py-3">
-        <p className="text-sm font-medium text-slate-700">
+        <p className="break-words text-sm font-medium text-slate-700">
           {value}
         </p>
       </div>

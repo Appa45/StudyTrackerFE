@@ -19,11 +19,11 @@ const navigation = [
     href: "/dashboard/ai-tutor",
     icon: "✦",
   },
-  {
-    label: "Settings",
-    href: "/dashboard/settings",
-    icon: "⚙",
-  },
+  // {
+  //   label: "Settings",
+  //   href: "/dashboard/settings",
+  //   icon: "⚙",
+  // },
 ];
 
 export default function Sidebar() {
