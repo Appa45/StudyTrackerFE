@@ -3,10 +3,9 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 
 const API_URL = (
-  process.env.API_URL?.startsWith("http")
-    ? process.env.API_URL
-    : "https://study-tracker-be-alpha.vercel.app/api"
-).replace(/\/+$/, "");
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:5000/api"
+).replace(/\/$/, "");
 
 interface User {
   _id: string;
@@ -50,6 +49,8 @@ async function getUserProfile(): Promise<{
       },
       cache: "no-store",
     });
+
+    console.log("res",response)
 
     const result: ProfileResponse = await response
       .json()
