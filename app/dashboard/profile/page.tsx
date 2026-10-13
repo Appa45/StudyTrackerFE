@@ -1,11 +1,11 @@
 
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 
 const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://localhost:5000/api"
+  process.env.API_URL?.startsWith("http")
+    ? process.env.API_URL
+    : "https://study-tracker-be-alpha.vercel.app/api"
 ).replace(/\/+$/, "");
 
 interface User {
@@ -56,11 +56,21 @@ async function getUserProfile(): Promise<{
       .catch(() => ({ success: false }));
 
     if (response.status === 401 || response.status === 403) {
-      redirect("/login?next=%2Fdashboard%2Fprofile");
+      console.error(
+        "Profile authentication failed:",
+        response.status,
+        result.message || result.error || "No error message returned"
+      );
+
+      return {
+        user: null,
+        error:
+          "The profile API rejected your authentication. Your page has not logged you out. Please verify that your login cookie is available and valid.",
+      };
     }
 
     if (!response.ok) {
-      console.error("Profile API error:", response.status, result);
+      console.error("Profile API failed:", response.status, result);
 
       return {
         user: null,
@@ -74,7 +84,7 @@ async function getUserProfile(): Promise<{
     const user = result.data ?? result.user;
 
     if (!result.success || !user) {
-      console.error("Invalid profile API response:", result);
+      console.error("Invalid profile response:", result);
 
       return {
         user: null,
@@ -84,18 +94,7 @@ async function getUserProfile(): Promise<{
 
     return { user, error: "" };
   } catch (error) {
-    // Next.js redirect() throws internally; allow the redirect to proceed.
-    if (
-      error &&
-      typeof error === "object" &&
-      "digest" in error &&
-      typeof error.digest === "string" &&
-      error.digest.startsWith("NEXT_REDIRECT")
-    ) {
-      throw error;
-    }
-
-    console.error("Unable to fetch profile:", error);
+    console.error("Profile request failed:", error);
 
     return {
       user: null,
@@ -107,6 +106,7 @@ async function getUserProfile(): Promise<{
 export default async function ProfilePage() {
   const { user, error } = await getUserProfile();
 
+  // Show an error rather than automatically redirecting to login.
   if (!user) {
     return (
       <div className="mx-auto max-w-3xl space-y-4 py-8">
@@ -122,21 +122,23 @@ export default async function ProfilePage() {
           <p className="mt-2">{error}</p>
         </div>
 
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/dashboard"
-            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            Back to Dashboard
-          </Link>
+        <Link
+          href="/dashboard"
+          className="inline-flex rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Back to Dashboard
+        </Link>
 
+        <p className="text-sm text-slate-500">
+          If your session has actually expired, you can{" "}
           <Link
             href="/login?next=%2Fdashboard%2Fprofile"
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700"
+            className="font-semibold text-indigo-600 hover:text-indigo-700"
           >
-            Login Again
+            sign in again
           </Link>
-        </div>
+          .
+        </p>
       </div>
     );
   }
@@ -165,7 +167,6 @@ export default async function ProfilePage() {
       })()
     : "Not available";
 
-  // Support both older flat fields and the nested API response.
   const preferredDifficulty =
     user.preferences?.preferredDifficulty ??
     user.preferredDifficulty ??
@@ -226,7 +227,6 @@ export default async function ProfilePage() {
                 <h2 className="text-xl font-bold text-slate-900">
                   {user.name}
                 </h2>
-
                 <p className="mt-1 text-sm text-slate-500">
                   {user.email}
                 </p>
@@ -242,7 +242,6 @@ export default async function ProfilePage() {
           <h2 className="text-lg font-bold text-slate-900">
             Personal Information
           </h2>
-
           <p className="mt-1 text-sm text-slate-500">
             Your basic account information.
           </p>
@@ -250,14 +249,11 @@ export default async function ProfilePage() {
 
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <ProfileField label="Full Name" value={user.name} />
-
           <ProfileField label="Email Address" value={user.email} />
-
           <ProfileField
             label="Phone Number"
             value={user.phone || "Not provided"}
           />
-
           <ProfileField label="Member Since" value={joinedDate} />
 
           <div className="md:col-span-2">
@@ -275,7 +271,6 @@ export default async function ProfilePage() {
           <h2 className="text-lg font-bold text-slate-900">
             Learning Preferences
           </h2>
-
           <p className="mt-1 text-sm text-slate-500">
             Customize StudyTrack around your learning routine.
           </p>
