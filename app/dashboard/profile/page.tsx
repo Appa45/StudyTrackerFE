@@ -111,20 +111,39 @@ interface ProfileResponse {
 
 
 
+
 async function getUserProfile(): Promise<{
   user: User | null;
   error: string;
 }> {
   try {
     const cookieStore = await cookies();
-    const cookieHeader = cookieStore.toString();
+
+    // Forward the cookies received by the Next.js page
+    // to the backend profile API.
+    const cookieHeader = cookieStore
+      .getAll()
+      .map(({ name, value }) => `${name}=${value}`)
+      .join("; ");
+
+    if (!cookieHeader) {
+      console.error(
+        "Profile request: No authentication cookies received by Next.js."
+      );
+
+      return {
+        user: null,
+        error:
+          "Your session could not be found. Please sign in again.",
+      };
+    }
 
     const response = await axios.get<ProfileResponse>(
       `${API_URL.replace(/\/+$/, "")}/users/profile`,
       {
         headers: {
           Accept: "application/json",
-          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+          Cookie: cookieHeader,
         },
         timeout: 15000,
       }
@@ -136,26 +155,35 @@ async function getUserProfile(): Promise<{
     if (!result.success || !user) {
       return {
         user: null,
-        error: result.message || "Profile information was not found.",
+        error:
+          result.message ??
+          result.error ??
+          "Profile information was not found.",
       };
     }
 
-    return { user, error: "" };
+    return {
+      user,
+      error: "",
+    };
   } catch (error) {
     if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+
       console.error("Profile API error:", {
-        status: error.response?.status,
-        message: error.response?.data?.message ?? error.message,
+        status,
+        message:
+          error.response?.data?.error ??
+          error.response?.data?.message ??
+          error.message,
         url: error.config?.url,
       });
 
-      if (
-        error.response?.status === 401 ||
-        error.response?.status === 403
-      ) {
+      if (status === 401 || status === 403) {
         return {
           user: null,
-          error: "Your profile request was not authenticated. Please check your session.",
+          error:
+            "Your session could not be authenticated. Please sign in again.",
         };
       }
 
@@ -165,7 +193,8 @@ async function getUserProfile(): Promise<{
           error.code === "ECONNABORTED" ||
           error.code === "ETIMEDOUT"
             ? "The profile service timed out. Please try again."
-            : error.response?.data?.message ||
+            : error.response?.data?.error ??
+              error.response?.data?.message ??
               "Unable to load your profile.",
       };
     }
@@ -178,6 +207,7 @@ async function getUserProfile(): Promise<{
     };
   }
 }
+
 
 
 export default async function ProfilePage() {
