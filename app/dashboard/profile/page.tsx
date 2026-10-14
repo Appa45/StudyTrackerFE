@@ -1,6 +1,8 @@
 
 import Link from "next/link";
 import { cookies } from "next/headers";
+import axios from "axios";
+
 
 const API_URL = (
   process.env.NEXT_PUBLIC_API_URL ||
@@ -33,6 +35,82 @@ interface ProfileResponse {
   error?: string;
 }
 
+// async function getUserProfile(): Promise<{
+//   user: User | null;
+//   error: string;
+// }> {
+//   try {
+//     const cookieStore = await cookies();
+//     const cookieHeader = cookieStore.toString();
+
+//        console.log("cookies seen by server:", cookieStore.getAll().map((c) => c.name));
+//     const response = await fetch(`${API_URL}/users/profile`, {
+//       method: "GET",
+//       headers: {
+//         Accept: "application/json",
+//         ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+//       },
+//       cache: "no-store",
+//     });
+
+//     console.log("res",response)
+
+//     const result: ProfileResponse = await response
+//       .json()
+//       .catch(() => ({ success: false }));
+
+//     if (response.status === 401 || response.status === 403) {
+//       console.error(
+//         "Profile authentication failed:",
+//         response.status,
+//         result.message || result.error || "No error message returned"
+//       );
+
+//       return {
+//         user: null,
+//         error:
+//           "The profile API rejected your authentication. Your page has not logged you out. Please verify that your login cookie is available and valid.",
+//       };
+//     }
+
+//     if (!response.ok) {
+//       console.error("Profile API failed:", response.status, result);
+
+//       return {
+//         user: null,
+//         error:
+//           result.message ||
+//           result.error ||
+//           `Unable to load profile (HTTP ${response.status}).`,
+//       };
+//     }
+
+//     const user = result.data ?? result.user;
+
+//     if (!result.success || !user) {
+//       console.error("Invalid profile response:", result);
+
+//       return {
+//         user: null,
+//         error: result.message || "Profile information was not found.",
+//       };
+//     }
+
+//     return { user, error: "" };
+//   } catch (error) {
+//     console.error("Profile request failed:", error);
+
+//     return {
+//       user: null,
+//       error: "Unable to connect to the profile service. Please try again.",
+//     };
+//   }
+// }
+
+
+
+
+
 async function getUserProfile(): Promise<{
   user: User | null;
   error: string;
@@ -41,53 +119,21 @@ async function getUserProfile(): Promise<{
     const cookieStore = await cookies();
     const cookieHeader = cookieStore.toString();
 
-       console.log("cookies seen by server:", cookieStore.getAll().map((c) => c.name));
-    const response = await fetch(`${API_URL}/users/profile`, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        ...(cookieHeader ? { Cookie: cookieHeader } : {}),
-      },
-      cache: "no-store",
-    });
+    const response = await axios.get<ProfileResponse>(
+      `${API_URL.replace(/\/+$/, "")}/users/profile`,
+      {
+        headers: {
+          Accept: "application/json",
+          ...(cookieHeader ? { Cookie: cookieHeader } : {}),
+        },
+        timeout: 15000,
+      }
+    );
 
-    console.log("res",response)
-
-    const result: ProfileResponse = await response
-      .json()
-      .catch(() => ({ success: false }));
-
-    if (response.status === 401 || response.status === 403) {
-      console.error(
-        "Profile authentication failed:",
-        response.status,
-        result.message || result.error || "No error message returned"
-      );
-
-      return {
-        user: null,
-        error:
-          "The profile API rejected your authentication. Your page has not logged you out. Please verify that your login cookie is available and valid.",
-      };
-    }
-
-    if (!response.ok) {
-      console.error("Profile API failed:", response.status, result);
-
-      return {
-        user: null,
-        error:
-          result.message ||
-          result.error ||
-          `Unable to load profile (HTTP ${response.status}).`,
-      };
-    }
-
+    const result = response.data;
     const user = result.data ?? result.user;
 
     if (!result.success || !user) {
-      console.error("Invalid profile response:", result);
-
       return {
         user: null,
         error: result.message || "Profile information was not found.",
@@ -96,14 +142,43 @@ async function getUserProfile(): Promise<{
 
     return { user, error: "" };
   } catch (error) {
-    console.error("Profile request failed:", error);
+    if (axios.isAxiosError(error)) {
+      console.error("Profile API error:", {
+        status: error.response?.status,
+        message: error.response?.data?.message ?? error.message,
+        url: error.config?.url,
+      });
+
+      if (
+        error.response?.status === 401 ||
+        error.response?.status === 403
+      ) {
+        return {
+          user: null,
+          error: "Your profile request was not authenticated. Please check your session.",
+        };
+      }
+
+      return {
+        user: null,
+        error:
+          error.code === "ECONNABORTED" ||
+          error.code === "ETIMEDOUT"
+            ? "The profile service timed out. Please try again."
+            : error.response?.data?.message ||
+              "Unable to load your profile.",
+      };
+    }
+
+    console.error("Unexpected profile error:", error);
 
     return {
       user: null,
-      error: "Unable to connect to the profile service. Please try again.",
+      error: "Unable to connect to the profile service.",
     };
   }
 }
+
 
 export default async function ProfilePage() {
   const { user, error } = await getUserProfile();
@@ -300,28 +375,7 @@ export default async function ProfilePage() {
         </div>
       </section>
 
-      {/* Account Actions */}
-      <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-100 sm:p-7">
-        <h2 className="text-lg font-bold text-slate-900">
-          Account
-        </h2>
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <Link
-            href="/dashboard/profile/edit"
-            className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            Update Profile
-          </Link>
-
-          <Link
-            href="/dashboard/profile/change-password"
-            className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            Change Password
-          </Link>
-        </div>
-      </section>
+    
     </div>
   );
 }
